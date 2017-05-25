@@ -1,0 +1,14 @@
+<launch>
+    
+    <node pkg="joy" type="joy_node" name="joy_node">
+        <param name="dev" type="string" value="/dev/input/js0" />
+        <param name="deadzone" type="double" value="0.1" />
+        <param name="autorepeat_rate" type="double" value="100" />
+        <param name="coalesce_interval" type="double" value="0.01" />
+    </node>
+
+    <node pkg="sawyer_apps" type="xbox_to_pose.py" name="xbox_to_pose" output="screen">
+        <remap from="target_pose" to="/target_pose"/>
+    </node>
+  
+</launch>
