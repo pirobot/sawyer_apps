@@ -52,8 +52,8 @@ class MoveItDemo:
         right_arm.allow_replanning(True)
         
         # Allow some leeway in position (meters) and orientation (radians)
-        right_arm.set_goal_position_tolerance(0.01)
-        right_arm.set_goal_orientation_tolerance(0.05)
+        right_arm.set_goal_position_tolerance(0.05)
+        right_arm.set_goal_orientation_tolerance(0.1)
         
         # Store the start pose
         start_pose = right_arm.get_current_pose(end_effector_link)
