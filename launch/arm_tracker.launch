@@ -1,0 +1,7 @@
+<launch>
+    
+    <node pkg="sawyer_apps" type="arm_tracker.py" name="arm_tracker" output="screen">
+        <remap from="target_pose" to="/target_pose"/>
+    </node>
+  
+</launch>
