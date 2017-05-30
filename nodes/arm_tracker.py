@@ -22,7 +22,8 @@
 """
 
 import rospy
-from moveit_commander import MoveGroupCommander
+import sys, os
+import moveit_commander
 from geometry_msgs.msg import PoseStamped
 
 GROUP_NAME_ARM = 'right_arm'
@@ -38,22 +39,15 @@ class ArmTracker:
     def __init__(self):
         rospy.init_node('arm_tracker')
         
+        # Initialize the move_group API
+        moveit_commander.roscpp_initialize(sys.argv)
+        
         rospy.on_shutdown(self.shutdown)
         
-        # Maximum distance of the target before the arm will lower
-        self.max_target_dist = 1.2
-        
-        # Distance between the last target and the new target before we move the arm
-        self.last_target_threshold = 0.01
-        
-        # Distance between target and end-effector before we move the arm
-        self.target_ee_threshold = 0.025
-        
         # Initialize the move group for the right arm
-        self.right_arm = MoveGroupCommander(GROUP_NAME_ARM)
+        self.right_arm = moveit_commander.MoveGroupCommander(GROUP_NAME_ARM)
         
-        # Initialize the move group for the right gripper
-        #right_gripper = MoveGroupCommander(GROUP_NAME_GRIPPER)
+        self.right_arm.set_planner_id("SBLkConfigDefault")
         
         # Keep track of the last target pose
         self.last_target_pose = PoseStamped()
@@ -65,23 +59,21 @@ class ArmTracker:
         self.right_arm.allow_replanning(False)
                 
         # Set a position tolerance in meters
-        self.right_arm.set_goal_position_tolerance(0.05)
+        self.right_arm.set_goal_position_tolerance(0.001)
         
         # Set an orientation tolerance in radians
-        self.right_arm.set_goal_orientation_tolerance(0.2)
+        self.right_arm.set_goal_orientation_tolerance(0.01)
+        
+        self.right_arm.set_planning_time(0.15)
         
         # What is the end effector link?
         self.end_effector_link = self.right_arm.get_end_effector_link()
         
-        # Set the gripper target to closed position using a joint value target
-        #right_gripper.set_joint_value_target(GRIPPER_CLOSED)
-         
-        # Plan and execute the gripper motion
-        #right_gripper.go()
-        #rospy.sleep(1)
-                
-        # Subscribe to the target topic
-        rospy.wait_for_message('target_pose', PoseStamped)
+        # Track how many times are given a request
+        self.request_count = 0
+        
+        # Track how many requests are successful
+        self.move_count = 0
         
         # Use queue_size=1 so we don't pile up outdated target messages
         self.target_subscriber = rospy.Subscriber('target_pose', PoseStamped, self.update_target_pose, queue_size=1)
@@ -89,7 +81,9 @@ class ArmTracker:
         rospy.loginfo("Ready for action!")
 
                     
-    def update_target_pose(self, target_pose):        
+    def update_target_pose(self, target_pose):
+        self.request_count += 1
+        
         # Set the start state to the current state
         self.right_arm.set_start_state_to_current_state()
     
@@ -97,20 +91,24 @@ class ArmTracker:
         self.right_arm.set_pose_target(target_pose, self.end_effector_link)
     
         # Plan the trajectory to the goal
-        #traj = self.right_arm.plan()
+        try:
+            traj = self.right_arm.plan()
+        except:
+            rospy.loginfo("IK or planning failed!")
     
         # Execute the planned trajectory
-        #self.right_arm.execute(traj)
+        success = False
         
-        # Plan and execute the trajectory
-        success = self.right_arm.go()
+        try:
+            success = self.right_arm.execute(traj, wait=True)
+        except:
+            rospy.loginfo("Execution failed!")
         
         if success:
-            # Store the current target as the last target
-            self.last_target_pose = target_pose
-        
-        # Pause a bit between motions to keep from locking up
-        rospy.sleep(0.1)
+            self.move_count += 1
+
+        rospy.loginfo("Requests: " + str(self.request_count) + " Successful: " + str(self.move_count))
+
            
     def shutdown(self):
         # Stop any further target messages from being processed

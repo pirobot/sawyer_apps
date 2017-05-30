@@ -49,7 +49,7 @@ class MoveItDemo:
         right_arm.set_pose_reference_frame(reference_frame)
                 
         # Allow replanning to increase the odds of a solution
-        right_arm.allow_replanning(True)
+        right_arm.allow_replanning(False)
         
         # Allow some leeway in position (meters) and orientation (radians)
         right_arm.set_goal_position_tolerance(0.05)
