@@ -75,6 +75,8 @@ class ArmTracker:
         # Track how many requests are successful
         self.move_count = 0
         
+        self.cartesian = True
+        
         # Use queue_size=1 so we don't pile up outdated target messages
         self.target_subscriber = rospy.Subscriber('target_pose', PoseStamped, self.update_target_pose, queue_size=1)
         
@@ -86,24 +88,54 @@ class ArmTracker:
         
         # Set the start state to the current state
         self.right_arm.set_start_state_to_current_state()
-    
-        # Set the goal pose to the target pose
-        self.right_arm.set_pose_target(target_pose, self.end_effector_link)
-    
-        # Plan the trajectory to the goal
-        try:
-            traj = self.right_arm.plan()
-        except:
-            rospy.loginfo("IK or planning failed!")
-    
-        # Execute the planned trajectory
+        
         success = False
         
-        try:
-            success = self.right_arm.execute(traj, wait=True)
-        except:
-            rospy.loginfo("Execution failed!")
+        if self.cartesian:
+            fraction = 0.0
+            maxtries = 1
+            attempts = 0
+     
+            # Plan the Cartesian path connecting the waypoints
+            while fraction < 1.0 and attempts < maxtries:
+                (plan, fraction) = self.right_arm.compute_cartesian_path (
+                                        [target_pose.pose],   # target pose
+                                        0.01,            # eef_step
+                                        0.0,             # jump_threshold
+                                        True)            # avoid_collisions
+                
+                # Increment the number of attempts 
+                attempts += 1
+                
+                # Print out a progress message
+                #if attempts % 10 == 0:
+                #    rospy.loginfo("Still trying after " + str(attempts) + " attempts...")
+                         
+            # If we have a complete plan, execute the trajectory
+            if fraction == 1.0:
+                rospy.loginfo("Path computed successfully. Moving the arm.")
+    
+                success = self.right_arm.execute(plan)
+                            
+                rospy.loginfo("Path execution complete.")
+            else:
+                rospy.loginfo("Path planning failed with only " + str(fraction) + " success after " + str(maxtries) + " attempts.")
+
+        else:
+            # Set the goal pose to the target pose
+            self.right_arm.set_pose_target(target_pose, self.end_effector_link)
+    
+            # Plan the trajectory to the goal
+            try:
+                traj = self.right_arm.plan()
+            except:
+                rospy.loginfo("IK or planning failed!")
         
+            try:
+                success = self.right_arm.execute(traj, wait=True)
+            except:
+                rospy.loginfo("Execution failed!")
+            
         if success:
             self.move_count += 1
 
