@@ -24,7 +24,9 @@
 import rospy
 import sys, os
 import moveit_commander
-from geometry_msgs.msg import PoseStamped
+import moveit_msgs.msg
+from geometry_msgs.msg import PoseStamped, Pose, Point, Quaternion
+from std_msgs.msg import Header
 
 GROUP_NAME_ARM = 'right_arm'
 GROUP_NAME_GRIPPER = 'right_gripper'
@@ -37,17 +39,33 @@ REFERENCE_FRAME = 'base'
 
 class ArmTracker:
     def __init__(self):
-        rospy.init_node('arm_tracker')
-        
         # Initialize the move_group API
         moveit_commander.roscpp_initialize(sys.argv)
         
+        rospy.init_node('arm_tracker')
+        
         rospy.on_shutdown(self.shutdown)
         
-        # Initialize the move group for the right arm
+        # Create an interface to the whole robot
+        self.robot = moveit_commander.RobotCommander()
+        
+        
+        # Create an interface to the planning scene
+        self.scene = moveit_commander.PlanningSceneInterface()
+        
+        # Initialize the move group for the arm
         self.right_arm = moveit_commander.MoveGroupCommander(GROUP_NAME_ARM)
         
-        self.right_arm.set_planner_id("RRTkConfigDefault")
+        # A display publisher for RViz
+        self.display_tracjectory_publisher = rospy.Publisher('/move_group/display_planned_path', moveit_msgs.msg.DisplayTrajectory, queue_size=5)
+        
+        # Select a planner
+        self.right_arm.set_planner_id("SBLkConfigDefault")
+        
+        # Set max acceleration and velocity scaling (0-1)
+        self.right_arm.set_max_acceleration_scaling_factor(1.0)
+        
+        self.right_arm.set_max_velocity_scaling_factor(1.0)
         
         # Keep track of the last target pose
         self.last_target_pose = PoseStamped()
@@ -59,17 +77,12 @@ class ArmTracker:
         self.right_arm.allow_replanning(False)
                 
         # Set a position tolerance in meters
-        self.right_arm.set_goal_position_tolerance(0.01)
+        self.right_arm.set_goal_position_tolerance(0.001)
         
         # Set an orientation tolerance in radians
-        self.right_arm.set_goal_orientation_tolerance(0.05)
-                
-        #self.right_arm.set_planning_time(0.015)
+        self.right_arm.set_goal_orientation_tolerance(0.01)
         
-        # Set max acceleration and velocity scaling (0-1)
-        self.right_arm.set_max_acceleration_scaling_factor(1.0)
-        
-        self.right_arm.set_max_velocity_scaling_factor(1.0)
+        self.right_arm.set_planning_time(0.15)
         
         # What is the end effector link?
         self.end_effector_link = self.right_arm.get_end_effector_link()
@@ -82,6 +95,40 @@ class ArmTracker:
         
         self.cartesian = False
         
+        hdr = Header(stamp=rospy.Time.now(), frame_id=REFERENCE_FRAME)
+        initial_pose = PoseStamped(
+            header=hdr,
+            pose=Pose(
+                # CAN CHANGE ABSOLUTE POSITION
+                position=Point(
+                    x = 1.06089534794,
+                    y = 0.158850291264,
+                    z = 0.315691943473
+
+                ),
+                orientation=Quaternion(
+                   x = 0.707,
+                   y = 0.0,
+                   z = 0.707,
+                   w = 0.0
+                ),
+            ),
+        )
+        
+        # Set the goal pose to the target pose
+        self.right_arm.set_pose_target(initial_pose, self.end_effector_link)
+
+        # Plan the trajectory to the goal
+        try:
+            traj = self.right_arm.plan()
+        except:
+            rospy.loginfo("IK or planning failed!")
+    
+        try:
+            success = self.right_arm.execute(traj, wait=True)
+        except:
+            rospy.loginfo("Execution failed!")
+            
         # Use queue_size=1 so we don't pile up outdated target messages
         self.target_subscriber = rospy.Subscriber('target_pose', PoseStamped, self.update_target_pose, queue_size=1)
         
@@ -90,6 +137,9 @@ class ArmTracker:
                     
     def update_target_pose(self, target_pose):
         self.request_count += 1
+        
+#         rospy.loginfo(self.request_count)
+#         return
         
         # Set the start state to the current state
         self.right_arm.set_start_state_to_current_state()
@@ -131,15 +181,15 @@ class ArmTracker:
             self.right_arm.set_pose_target(target_pose, self.end_effector_link)
     
             # Plan the trajectory to the goal
-            #try:
-            traj = self.right_arm.plan()
-            #except:
-                #rospy.loginfo("IK or planning failed!")
+            try:
+                traj = self.right_arm.plan()
+            except:
+                rospy.loginfo("IK or planning failed!")
         
-            #try:
-            success = self.right_arm.execute(traj, wait=True)
-            #except:
-                #rospy.loginfo("Execution failed!")
+            try:
+                success = self.right_arm.execute(traj, wait=True)
+            except:
+                rospy.loginfo("Execution failed!")
             
         if success:
             self.move_count += 1

@@ -9,7 +9,7 @@ from geometry_msgs.msg import (
 from std_msgs.msg import Header
 import numpy as np
 
-rospy.init_node('dksjhlflgyygfleuigfaueig')
+rospy.init_node('arm_tracker_publisher')
 
 pub = rospy.Publisher('target_pose', PoseStamped, queue_size = 1)
 
@@ -45,7 +45,8 @@ rospy.sleep(2)
 num_pts = 100
 arr = np.arange(num_pts, dtype=np.float)
 print(arr)
-y_arr = 0.160220965428 + 0.2 * np.sin(2*np.pi*0.03*arr)
+y_arr = 0.160220965428 + 0.2 * np.sin(2*np.pi*0.015*arr)
+#y_arr = 0.160220965428 - 0.005 * arr
 #x_arr = 1.06089534794 + 0.2 * np.sin(2*np.pi*0.03*arr)
 
 print(y_arr)
