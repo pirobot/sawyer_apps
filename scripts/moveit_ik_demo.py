@@ -25,8 +25,8 @@ import rospy, sys
 import moveit_commander
 from moveit_msgs.msg import RobotTrajectory
 from trajectory_msgs.msg import JointTrajectoryPoint
-
-from geometry_msgs.msg import PoseStamped, Pose
+from std_msgs.msg import Header
+from geometry_msgs.msg import PoseStamped, Pose, Point, Quaternion
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 
 class MoveItDemo:
@@ -52,8 +52,8 @@ class MoveItDemo:
         right_arm.allow_replanning(False)
         
         # Allow some leeway in position (meters) and orientation (radians)
-        right_arm.set_goal_position_tolerance(0.05)
-        right_arm.set_goal_orientation_tolerance(0.1)
+        right_arm.set_goal_position_tolerance(0.001)
+        right_arm.set_goal_orientation_tolerance(0.05)
         
         # Store the start pose
         start_pose = right_arm.get_current_pose(end_effector_link)
@@ -69,6 +69,26 @@ class MoveItDemo:
         target_pose.pose.orientation.y = 0.704731586969
         target_pose.pose.orientation.z = -0.0148928235808
         target_pose.pose.orientation.w = 0.708964540308
+
+        hdr = Header(stamp=rospy.Time.now(), frame_id='base')
+        target_pose = PoseStamped(
+            header=hdr,
+            pose=Pose(
+                # CAN CHANGE ABSOLUTE POSITION
+                position=Point(
+                    x = 1.06089534794,
+                    y = 0.158850291264,
+                    z = 0.315691943473
+                ),
+                orientation=Quaternion(
+                   x = 0.707,
+                   y = 0.0,
+                   z = 0.707,
+                   w = 0.0
+                ),
+            ),
+        )
+
         
         # Set the start state to the current state
         right_arm.set_start_state_to_current_state()
@@ -83,25 +103,41 @@ class MoveItDemo:
         right_arm.execute(traj)
          
         # Shift the end-effector to the left 5cm
-        right_arm.shift_pose_target(1, 0.05, end_effector_link)
-        right_arm.go()
-        rospy.sleep(1)
+        traj_array = []
+        for i in range(40):
+            right_arm.shift_pose_target(1, -0.01, end_effector_link)
+            traj = right_arm.plan()
+            n_points = len(traj.joint_trajectory.points)
+
+            #for i in range(n_points):
+            #    traj.joint_trajectory.points[i].velocities = [5]*7
+
+            rospy.loginfo(traj)
+            traj_array.append(traj)    
+            #right_arm.execute(traj)
+#            right_arm.go()
+            #rospy.sleep(0.01)
+
+        for i in range(40):
+            right_arm.execute(traj_array[i])
+            rospy.sleep(0.1)
   
+
         # Rotate the end-effector 90 degrees
-        right_arm.shift_pose_target(3, -1.57, end_effector_link)
-        right_arm.go()
-        rospy.sleep(1)
+#        right_arm.shift_pose_target(3, -1.57, end_effector_link)
+#        right_arm.go()
+#        rospy.sleep(1)
           
         # Go back to the original target pose
-        right_arm.set_pose_target(target_pose, end_effector_link)
-        right_arm.go()
-        rospy.sleep(1)
+#        right_arm.set_pose_target(target_pose, end_effector_link)
+#        right_arm.go()
+#        rospy.sleep(1)
         
         # Go back to start pose
-        right_arm.set_start_state_to_current_state()
-        right_arm.set_pose_target(start_pose, end_effector_link)
-        right_arm.go()
-        rospy.sleep(1)
+#        right_arm.set_start_state_to_current_state()
+#        right_arm.set_pose_target(start_pose, end_effector_link)
+#        right_arm.go()
+#        rospy.sleep(1)
            
         # Finish up in the resting position  
         #right_arm.set_named_target('rest')

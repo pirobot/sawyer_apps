@@ -80,7 +80,7 @@ class ArmTracker:
         # Track how many requests are successful
         self.move_count = 0
         
-        self.cartesian = False
+        self.cartesian = True
         
         # Use queue_size=1 so we don't pile up outdated target messages
         self.target_subscriber = rospy.Subscriber('target_pose', PoseStamped, self.update_target_pose, queue_size=1)
