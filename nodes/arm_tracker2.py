@@ -49,7 +49,6 @@ class ArmTracker:
         # Create an interface to the whole robot
         self.robot = moveit_commander.RobotCommander()
         
-        
         # Create an interface to the planning scene
         self.scene = moveit_commander.PlanningSceneInterface()
         
