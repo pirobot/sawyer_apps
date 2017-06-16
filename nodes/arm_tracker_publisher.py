@@ -41,23 +41,18 @@ rospy.sleep(2)
 num_pts = 100
 arr = np.arange(num_pts, dtype=np.float)
 print(arr)
-y_arr = 0.160220965428 + 0.2 * np.sin(2*np.pi*0.015*arr)
-#y_arr = 0.160220965428 - 0.005 * arr
-#x_arr = 1.06089534794 + 0.2 * np.sin(2*np.pi*0.03*arr)
+#y_arr = 0.160220965428 + 0.2 * np.sin(2*np.pi*0.015*arr)
+y_arr = 0.160220965428 - 0.005 * arr
+#x_arr = 0.5 + 0.2 * np.sin(2*np.pi*0.03*arr)
 
 print(y_arr)
-
-for i in range(100)
-        right_arm.shift_pose_target(1, -0.015, end_effector_link)
-        right_arm.go()
-        rospy.sleep(0.015)
 
 for i in range(100):
     newPose.header.stamp = rospy.Time.now()
     newPose.pose.position.y = y_arr[i]
     #newPose.pose.position.x = x_arr[i]
     pub.publish(newPose)
-    rospy.sleep(0.15)
+    rospy.sleep(0.1)
 # newPose.header.stamp = rospy.Time.now()
 # newPose.pose.position.y = y_arr[i]
 # pub.publish(newPose)
