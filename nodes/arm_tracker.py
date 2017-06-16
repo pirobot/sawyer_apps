@@ -28,6 +28,7 @@ from geometry_msgs.msg import PoseStamped
 from moveit_msgs.msg import RobotTrajectory
 from sensor_msgs.msg import JointState
 from copy import deepcopy
+import numpy as np
 
 GROUP_NAME_ARM = 'right_arm'
 GROUP_NAME_GRIPPER = 'right_gripper'
@@ -85,11 +86,17 @@ class ArmTracker:
         
         # Use Cartesian planning?
         self.cartesian = True
-        
-        self.joint_states = JointState()
+
+        # How close is close enough? (Radians for joint angles)
+        self.close_enough = 0.01
+
+        #self.joint_names = self.right_arm.get_joint_names()
         
         # Monitor the current joint states
+        self.joint_states = JointState()
+        
         rospy.wait_for_message('joint_states', JointState)
+
         self.joint_states_subscriber = rospy.Subscriber('joint_states', JointState, self.update_joint_states, queue_size=1)
         
         # Use queue_size=1 so we don't pile up outdated target messages
@@ -97,9 +104,8 @@ class ArmTracker:
         
         rospy.loginfo("Ready for action!")
         
-    def update_joint_states(self, msg):
+    def update_joint_states(self, msg):        
         self.joint_states = msg
-
                     
     def update_target_pose(self, target_pose):
         self.request_count += 1
@@ -135,15 +141,6 @@ class ArmTracker:
     
                 traj = self.create_tracking_trajectory(plan, 4.0, 0.2)
                 
-                # Pull off the last point of the trajectory
-                n_points = len(traj.joint_trajectory.points)
-                new_traj = RobotTrajectory()
-                new_traj.joint_trajectory.header = traj.joint_trajectory.header
-                new_traj.joint_trajectory.points.append(traj.joint_trajectory.points[n_points - 1])
-                new_traj.joint_trajectory.joint_names = traj.joint_trajectory.joint_names
-
-                success = self.right_arm.execute(traj)
-                            
                 rospy.loginfo("Path execution complete.")
             else:
                 rospy.loginfo("Path planning failed with only " + str(fraction) + " success after " + str(maxtries) + " attempts.")
@@ -160,10 +157,24 @@ class ArmTracker:
                 #rospy.loginfo("IK or planning failed!")
         
             #try:
-            success = self.right_arm.execute(traj, wait=True)
+
             #except:
                 #rospy.loginfo("Execution failed!")
-            
+
+        # Pull off the last point of the trajectory
+        n_points = len(traj.joint_trajectory.points)
+
+        # How far away are we?
+        final_positions = np.asarray(traj.joint_trajectory.points[n_points - 1].positions)
+        current_positions = np.asarray(self.right_arm.get_current_joint_values())
+        delta = np.linalg.norm(final_positions - current_positions)
+
+        # If close enough then skip it
+#        if delta < self.close_enough:
+#            return
+
+        success = self.right_arm.execute(traj, wait=False)
+
         if success:
             self.move_count += 1
 
