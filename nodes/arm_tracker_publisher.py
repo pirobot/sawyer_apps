@@ -25,10 +25,6 @@ newPose = PoseStamped(
 
                 ),
                 orientation=Quaternion(
-#                    x = -0.542323501016,
-#                    y = 0.455612652423,
-#                    z = -0.541239617056,
-#                    w = 0.453168851675
                    x = 0.707,
                    y = 0.0,
                    z = 0.707,
@@ -50,6 +46,11 @@ y_arr = 0.160220965428 + 0.2 * np.sin(2*np.pi*0.015*arr)
 #x_arr = 1.06089534794 + 0.2 * np.sin(2*np.pi*0.03*arr)
 
 print(y_arr)
+
+for i in range(100)
+        right_arm.shift_pose_target(1, -0.015, end_effector_link)
+        right_arm.go()
+        rospy.sleep(0.015)
 
 for i in range(100):
     newPose.header.stamp = rospy.Time.now()
