@@ -25,6 +25,8 @@ import rospy
 import sys, os
 import moveit_commander
 from geometry_msgs.msg import PoseStamped
+from moveit_msgs.msg import RobotTrajectory
+from copy import deepcopy
 
 GROUP_NAME_ARM = 'right_arm'
 GROUP_NAME_GRIPPER = 'right_gripper'
@@ -64,7 +66,7 @@ class ArmTracker:
         # Set an orientation tolerance in radians
         self.right_arm.set_goal_orientation_tolerance(0.05)
                 
-        #self.right_arm.set_planning_time(0.015)
+        self.right_arm.set_planning_time(0.02)
         
         # Set max acceleration and velocity scaling (0-1)
         self.right_arm.set_max_acceleration_scaling_factor(1.0)
@@ -80,7 +82,7 @@ class ArmTracker:
         # Track how many requests are successful
         self.move_count = 0
         
-        self.cartesian = False
+        self.cartesian = True
         
         # Use queue_size=1 so we don't pile up outdated target messages
         self.target_subscriber = rospy.Subscriber('target_pose', PoseStamped, self.update_target_pose, queue_size=1)
@@ -120,7 +122,8 @@ class ArmTracker:
             if fraction == 1.0:
                 rospy.loginfo("Path computed successfully. Moving the arm.")
     
-                success = self.right_arm.execute(plan)
+                traj = self.create_tracking_trajectory(plan, 4.0, 0.1)
+                success = self.right_arm.execute(traj)
                             
                 rospy.loginfo("Path execution complete.")
             else:
@@ -132,7 +135,8 @@ class ArmTracker:
     
             # Plan the trajectory to the goal
             #try:
-            traj = self.right_arm.plan()
+            plan = self.right_arm.plan()
+            traj = self.create_tracking_trajectory(plan, 4.0, 0.1)
             #except:
                 #rospy.loginfo("IK or planning failed!")
         
@@ -145,6 +149,37 @@ class ArmTracker:
             self.move_count += 1
 
         rospy.loginfo("Requests: " + str(self.request_count) + " Successful: " + str(self.move_count))
+        
+    def create_tracking_trajectory(self, traj, speed, min_speed):
+        # Create a new trajectory object
+        new_traj = RobotTrajectory()
+       
+        # Initialize the new trajectory to be the same as the input trajectory
+        new_traj.joint_trajectory = deepcopy(traj.joint_trajectory)
+        
+        # Get the number of joints involved
+        n_joints = len(traj.joint_trajectory.joint_names)
+        
+        # Get the number of points on the trajectory
+        n_points = len(traj.joint_trajectory.points)
+        
+        # Cycle through all points and joints and scale the time from start,
+        # as well as joint speed and acceleration
+        for i in range(n_points):           
+            # The joint positions are not scaled so pull them out first
+            new_traj.joint_trajectory.points[i].positions = traj.joint_trajectory.points[i].positions
+        
+            # Next, scale the time_from_start for this point
+            new_traj.joint_trajectory.points[i].time_from_start = traj.joint_trajectory.points[i].time_from_start / speed
+            
+            # Initialize the joint velocities for this point
+            new_traj.joint_trajectory.points[i].velocities = [speed] * n_joints + [min_speed] * n_joints
+            
+            # Get the joint accelerations for this point
+            new_traj.joint_trajectory.points[i].accelerations = [speed / 4.0] * n_joints
+        
+        # Return the new trajecotry
+        return new_traj
 
            
     def shutdown(self):
