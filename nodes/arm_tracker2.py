@@ -24,9 +24,13 @@
 import rospy
 import sys, os
 import moveit_commander
-import moveit_msgs.msg
+from moveit_msgs.msg import RobotTrajectory, DisplayTrajectory
 from geometry_msgs.msg import PoseStamped, Pose, Point, Quaternion
 from std_msgs.msg import Header
+from sensor_msgs.msg import JointState
+from copy import deepcopy
+import numpy as np
+from math import copysign
 
 GROUP_NAME_ARM = 'right_arm'
 GROUP_NAME_GRIPPER = 'right_gripper'
@@ -56,7 +60,7 @@ class ArmTracker:
         self.right_arm = moveit_commander.MoveGroupCommander(GROUP_NAME_ARM)
         
         # A display publisher for RViz
-        self.display_tracjectory_publisher = rospy.Publisher('/move_group/display_planned_path', moveit_msgs.msg.DisplayTrajectory, queue_size=5)
+        self.display_tracjectory_publisher = rospy.Publisher('/move_group/display_planned_path', DisplayTrajectory, queue_size=5)
         
         # Select a planner
         self.right_arm.set_planner_id("SBLkConfigDefault")
@@ -128,17 +132,26 @@ class ArmTracker:
         except:
             rospy.loginfo("Execution failed!")
             
+        rospy.sleep(2)
+            
+        self.joint_states = JointState()
+        
+        # Monitor the current joint states
+        rospy.wait_for_message('joint_states', JointState)
+        self.joint_states_subscriber = rospy.Subscriber('joint_states', JointState, self.update_joint_states, queue_size=1)
+        
         # Use queue_size=1 so we don't pile up outdated target messages
         self.target_subscriber = rospy.Subscriber('target_pose', PoseStamped, self.update_target_pose, queue_size=1)
         
         rospy.loginfo("Ready for action!")
 
                     
+    def update_joint_states(self, msg):
+        self.joint_states = msg
+
+                    
     def update_target_pose(self, target_pose):
         self.request_count += 1
-        
-#         rospy.loginfo(self.request_count)
-#         return
         
         # Set the start state to the current state
         self.right_arm.set_start_state_to_current_state()
@@ -154,7 +167,7 @@ class ArmTracker:
             while fraction < 1.0 and attempts < maxtries:
                 (plan, fraction) = self.right_arm.compute_cartesian_path (
                                         [target_pose.pose],   # target pose
-                                        0.01,            # eef_step
+                                        0.1,            # eef_step
                                         0.0,             # jump_threshold
                                         True)            # avoid_collisions
                 
@@ -169,7 +182,16 @@ class ArmTracker:
             if fraction == 1.0:
                 rospy.loginfo("Path computed successfully. Moving the arm.")
     
-                success = self.right_arm.execute(plan)
+                traj = self.create_tracking_trajectory(plan, 4.0, 0.2)
+                
+                # Pull off the last point of the trajectory
+                n_points = len(traj.joint_trajectory.points)
+                new_traj = RobotTrajectory()
+                new_traj.joint_trajectory.header = traj.joint_trajectory.header
+                new_traj.joint_trajectory.points.append(traj.joint_trajectory.points[n_points - 1])
+                new_traj.joint_trajectory.joint_names = traj.joint_trajectory.joint_names
+
+                success = self.right_arm.execute(traj)
                             
                 rospy.loginfo("Path execution complete.")
             else:
@@ -180,20 +202,129 @@ class ArmTracker:
             self.right_arm.set_pose_target(target_pose, self.end_effector_link)
     
             # Plan the trajectory to the goal
-            try:
-                traj = self.right_arm.plan()
-            except:
-                rospy.loginfo("IK or planning failed!")
+            #try:
+            plan = self.right_arm.plan()
+            traj = self.create_tracking_trajectory(plan, 8.0, 0.5)
+            #except:
+                #rospy.loginfo("IK or planning failed!")
         
-            try:
-                success = self.right_arm.execute(traj, wait=True)
-            except:
-                rospy.loginfo("Execution failed!")
+            #try:
+            success = self.right_arm.execute(traj, wait=True)
+            #except:
+                #rospy.loginfo("Execution failed!")
             
         if success:
             self.move_count += 1
 
         rospy.loginfo("Requests: " + str(self.request_count) + " Successful: " + str(self.move_count))
+        
+        
+    def create_tracking_trajectory(self, traj, speed, min_speed):
+        # Create a new trajectory object
+        new_traj = RobotTrajectory()
+       
+        # Initialize the new trajectory to be the same as the input trajectory
+        new_traj.joint_trajectory = deepcopy(traj.joint_trajectory)
+        
+        # Get the number of joints involved
+        n_joints = len(traj.joint_trajectory.joint_names)
+        
+        # Get the number of points on the trajectory
+        n_points = len(traj.joint_trajectory.points)
+                
+        # Get the current joint values
+        current_joint_values = self.right_arm.get_current_joint_values()
+        
+        # Compute the difference from the final joint values
+        delta_joint_values = np.subtract(traj.joint_trajectory.points[n_points - 1].positions, tuple(current_joint_values))
+        
+        delta_signs = list()
+        
+        for i in range(n_joints):
+            delta_signs.append(copysign(1.0, delta_joint_values[i]))
+            
+        traj_position_array = np.array(traj.joint_trajectory.points[n_points - 1].positions)
+
+        traj_position_array += np.array(delta_signs) * 0.05
+                
+        # Pull off the final joint state
+        #self.right_arm.set_joint_value_target(traj.joint_trajectory.points[n_points - 1].positions)
+        self.right_arm.set_joint_value_target(traj_position_array)
+        
+        new_traj = self.right_arm.plan()
+        
+        for i in range(1):           
+            # The joint positions are not scaled so pull them out first
+            #new_traj.joint_trajectory.points[i].positions = traj.joint_trajectory.points[i].positions + tuple([0.1] * n_joints)
+          
+            # Next, scale the time_from_start for this point
+            new_traj.joint_trajectory.points[i].time_from_start = new_traj.joint_trajectory.points[i].time_from_start / speed
+              
+            # Initialize the joint velocities for this point
+            new_traj.joint_trajectory.points[i].velocities = [speed + min_speed] * n_joints
+              
+            # Get the joint accelerations for this point
+            new_traj.joint_trajectory.points[i].accelerations = [speed / 4.0] * n_joints
+        
+        #new_traj.joint_trajectory.points = new_traj.joint_trajectory.points[n_points - 1:]
+        
+    
+        # Next, scale the time_from_start for this point
+        #new_traj.joint_trajectory.points[0].time_from_start = traj.joint_trajectory.points[n_points - 1].time_from_start / speed
+        
+        # Initialize the joint velocities for this point
+        #new_traj.joint_trajectory.points[0].velocities = [speed + min_speed] * n_joints
+        
+        # Get the joint accelerations for this point
+        #new_traj.joint_trajectory.points[0].accelerations = [speed / 4.0] * n_joints
+        
+#         # Cycle through all points and joints and scale the time from start, as well as joint speed and acceleration
+#         for i in range(n_points):           
+#             # The joint positions are not scaled so pull them out first
+#             new_traj.joint_trajectory.points[i].positions = traj.joint_trajectory.points[i].positions + tuple([0.1] * n_joints)
+#           
+#             # Next, scale the time_from_start for this point
+#             new_traj.joint_trajectory.points[i].time_from_start = traj.joint_trajectory.points[i].time_from_start / speed
+#               
+#             # Initialize the joint velocities for this point
+#             new_traj.joint_trajectory.points[i].velocities = [speed + min_speed] * n_joints
+#               
+#             # Get the joint accelerations for this point
+#             new_traj.joint_trajectory.points[i].accelerations = [speed / 4.0] * n_joints
+        
+        # Return the new trajecotry
+        return new_traj
+    
+    def create_tracking_trajectory_1(self, traj, speed, min_speed):
+        # Create a new trajectory object
+        new_traj = RobotTrajectory()
+       
+        # Initialize the new trajectory to be the same as the input trajectory
+        new_traj.joint_trajectory = deepcopy(traj.joint_trajectory)
+        
+        # Get the number of joints involved
+        n_joints = len(traj.joint_trajectory.joint_names)
+        
+        # Get the number of points on the trajectory
+        n_points = len(traj.joint_trajectory.points)
+        
+        # Cycle through all points and joints and scale the time from start,
+        # as well as joint speed and acceleration
+        for i in range(n_points):           
+            # The joint positions are not scaled so pull them out first
+            new_traj.joint_trajectory.points[i].positions = traj.joint_trajectory.points[i].positions
+        
+            # Next, scale the time_from_start for this point
+            new_traj.joint_trajectory.points[i].time_from_start = traj.joint_trajectory.points[i].time_from_start / speed
+            
+            # Initialize the joint velocities for this point
+            new_traj.joint_trajectory.points[i].velocities = [speed + min_speed] * n_joints
+            
+            # Get the joint accelerations for this point
+            new_traj.joint_trajectory.points[i].accelerations = [speed / 4.0] * n_joints
+        
+        # Return the new trajecotry
+        return new_traj
 
            
     def shutdown(self):
