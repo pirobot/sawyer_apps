@@ -36,18 +36,18 @@ newPose = PoseStamped(
 pub.publish(newPose)
 rospy.sleep(1)
 pub.publish(newPose)
-rospy.sleep(2)
+rospy.sleep(3)
 
 num_pts = 100
 arr = np.arange(num_pts, dtype=np.float)
 print(arr)
-#y_arr = 0.160220965428 + 0.2 * np.sin(2*np.pi*0.015*arr)
-y_arr = 0.160220965428 - 0.005 * arr
+y_arr = 0.160220965428 + 0.2 * np.sin(2*np.pi*0.015*arr)
+#y_arr = 0.160220965428 - 0.005 * arr
 #x_arr = 0.5 + 0.2 * np.sin(2*np.pi*0.03*arr)
 
 print(y_arr)
 
-for i in range(100):
+for i in range(num_pts):
     newPose.header.stamp = rospy.Time.now()
     newPose.pose.position.y = y_arr[i]
     #newPose.pose.position.x = x_arr[i]
